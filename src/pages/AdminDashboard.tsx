@@ -2,26 +2,32 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useProducts } from '../hooks/useProducts';
-import { collection, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { useSiteSettings } from '../hooks/useSiteSettings';
+import { collection, addDoc, updateDoc, deleteDoc, doc, setDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { uploadToPostimages } from '../services/postimagesUpload';
-import { Plus, Edit2, Trash2, LogOut, Home, Upload, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, LogOut, Home, Upload, X, Image, Sparkles } from 'lucide-react';
 
 export function AdminDashboard() {
   const { isAdmin, logout } = useAuth();
   const { products, loading } = useProducts();
+  const { settings } = useSiteSettings();
   const navigate = useNavigate();
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    imageUrl: ''
+    imageUrl: '',
+    bio: ''
   });
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showLogoModal, setShowLogoModal] = useState(false);
+  const [logoUrl, setLogoUrl] = useState('');
+  const [generatingBio, setGeneratingBio] = useState(false);
 
   if (!isAdmin) {
     navigate('/admin/login');
@@ -94,13 +100,14 @@ export function AdminDashboard() {
         console.log('Adding new product:', formData);
         await addDoc(collection(db, 'products'), {
           ...formData,
+          slug: formData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
           createdAt: Date.now()
         });
         console.log('Product added successfully');
       }
       setShowModal(false);
       setEditingProduct(null);
-      setFormData({ name: '', description: '', imageUrl: '' });
+      setFormData({ name: '', description: '', imageUrl: '', bio: '' });
       setUploadedFile(null);
     } catch (error) {
       console.error('Error saving product to Firestore:', error);
@@ -114,7 +121,8 @@ export function AdminDashboard() {
     setFormData({
       name: product.name,
       description: product.description,
-      imageUrl: product.imageUrl || ''
+      imageUrl: product.imageUrl || '',
+      bio: product.bio || ''
     });
     setUploadedFile(null);
     setShowModal(true);
@@ -138,13 +146,72 @@ export function AdminDashboard() {
     navigate('/');
   };
 
+  const handleLogoChange = async () => {
+    try {
+      await setDoc(doc(db, 'settings', 'site'), {
+        logoUrl: logoUrl
+      });
+      setShowLogoModal(false);
+      setLogoUrl('');
+    } catch (error) {
+      console.error('Error updating logo:', error);
+      alert('Failed to update logo. Check console for details.');
+    }
+  };
+
+  const generateBio = async () => {
+    if (!formData.name || !formData.description) {
+      alert('Please provide product name and description first');
+      return;
+    }
+
+    setGeneratingBio(true);
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_OPENAI_API_KEY || ''}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a professional copywriter specializing in industrial and manufacturing products. Create compelling, detailed product bios that highlight features, benefits, and applications.'
+            },
+            {
+              role: 'user',
+              content: `Create a detailed product bio for: ${formData.name}\n\nDescription: ${formData.description}\n\nProvide a comprehensive bio that emphasizes quality, craftsmanship, and practical applications.`
+            }
+          ],
+          max_tokens: 300,
+          temperature: 0.7
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate bio');
+      }
+
+      const data = await response.json();
+      const generatedBio = data.choices[0].message.content;
+      setFormData({ ...formData, bio: generatedBio });
+    } catch (error) {
+      console.error('Error generating bio:', error);
+      alert('Failed to generate bio. Make sure VITE_OPENAI_API_KEY is set in your .env file.');
+    } finally {
+      setGeneratingBio(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img src="/dfefwe.png" alt="ATSA Logo" className="w-12 h-12" />
+              <img src={settings.logoUrl} alt="ATSA Logo" className="w-12 h-12 object-contain" />
               <h1 className="text-2xl font-bold text-[#3d4f5c]">Admin Dashboard</h1>
             </div>
             <div className="flex gap-3">
@@ -169,11 +236,30 @@ export function AdminDashboard() {
 
       <div className="container mx-auto px-6 py-8">
         <div className="flex justify-between items-center mb-8">
+          <h2 className="text-3xl font-bold text-[#3d4f5c]">Site Settings</h2>
+          <button
+            onClick={() => {
+              setLogoUrl(settings.logoUrl);
+              setShowLogoModal(true);
+            }}
+            className="flex items-center gap-2 bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition font-semibold"
+          >
+            <Image className="w-5 h-5" />
+            Change Logo
+          </button>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+          <h3 className="text-xl font-bold text-[#3d4f5c] mb-4">Current Logo</h3>
+          <img src={settings.logoUrl} alt="Current Logo" className="w-32 h-32 object-contain border border-gray-200 rounded-lg" />
+        </div>
+
+        <div className="flex justify-between items-center mb-8 mt-12">
           <h2 className="text-3xl font-bold text-[#3d4f5c]">Products</h2>
           <button
             onClick={() => {
               setEditingProduct(null);
-              setFormData({ name: '', description: '', imageUrl: '' });
+              setFormData({ name: '', description: '', imageUrl: '', bio: '' });
               setUploadedFile(null);
               setShowModal(true);
             }}
@@ -244,6 +330,27 @@ export function AdminDashboard() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3d4f5c] focus:border-transparent"
                   rows={4}
                   required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Product Bio (AI Generated)</label>
+                <div className="flex gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={generateBio}
+                    disabled={generatingBio}
+                    className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white px-4 py-2 rounded-lg hover:from-purple-700 hover:to-blue-700 transition font-semibold disabled:opacity-50"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    {generatingBio ? 'Generating...' : 'Generate Bio with AI'}
+                  </button>
+                </div>
+                <textarea
+                  value={formData.bio}
+                  onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3d4f5c] focus:border-transparent"
+                  rows={6}
+                  placeholder="AI-generated bio will appear here, or you can write your own..."
                 />
               </div>
               <div>
@@ -340,7 +447,7 @@ export function AdminDashboard() {
                   onClick={() => {
                     setShowModal(false);
                     setEditingProduct(null);
-                    setFormData({ name: '', description: '', imageUrl: '' });
+                    setFormData({ name: '', description: '', imageUrl: '', bio: '' });
                     setUploadedFile(null);
                   }}
                   className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
@@ -349,6 +456,49 @@ export function AdminDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showLogoModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-6 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full p-8">
+            <h3 className="text-2xl font-bold text-[#3d4f5c] mb-6">Change Logo</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Logo URL</label>
+                <input
+                  type="text"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3d4f5c] focus:border-transparent"
+                  placeholder="https://example.com/logo.png"
+                />
+              </div>
+              {logoUrl && (
+                <div className="mt-4">
+                  <p className="text-sm text-gray-600 mb-2">Preview:</p>
+                  <img src={logoUrl} alt="Logo Preview" className="w-32 h-32 object-contain border border-gray-200 rounded-lg" />
+                </div>
+              )}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={handleLogoChange}
+                  className="flex-1 bg-[#3d4f5c] text-white py-3 rounded-lg font-semibold hover:bg-[#2d3f4c] transition"
+                >
+                  Update Logo
+                </button>
+                <button
+                  onClick={() => {
+                    setShowLogoModal(false);
+                    setLogoUrl('');
+                  }}
+                  className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -8,6 +8,7 @@ export interface Product {
   description: string;
   imageUrl?: string;
   slug?: string;
+  bio?: string;
   createdAt: number;
 }
 

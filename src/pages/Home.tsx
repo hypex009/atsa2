@@ -4,9 +4,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useProducts } from '../hooks/useProducts';
 import { useAuth } from '../contexts/AuthContext';
 import { useScrollAnimation } from '../hooks/useScrollAnimation';
+import { useSiteSettings } from '../hooks/useSiteSettings';
 
 export function Home() {
   const { products, loading } = useProducts();
+  const { settings } = useSiteSettings();
   const { isAdmin, user, logout } = useAuth();
   const navigate = useNavigate();
   const [showAllProducts, setShowAllProducts] = useState(false);
@@ -28,7 +30,7 @@ export function Home() {
         <nav className="container mx-auto px-6">
           <div className="bg-gradient-to-r from-[#3d4f5c] to-[#5a7280] bg-opacity-90 backdrop-blur-sm text-white rounded-2xl shadow-lg px-6 py-4 flex items-center justify-between" style={{backgroundColor: 'rgba(61, 79, 92, 0.9)'}}>
             <div className="flex items-center gap-3">
-              <img src="/dfefwe.png" alt="ATSA Logo" className="w-14 h-14 object-contain" style={{mixBlendMode: 'lighten'}} />
+              <img src={settings.logoUrl} alt="ATSA Logo" className="w-14 h-14 object-contain" style={{mixBlendMode: 'lighten'}} />
               <span className="text-xl font-bold">ATSA</span>
             </div>
             <div className="hidden md:flex gap-3">
